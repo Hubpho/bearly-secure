@@ -10,8 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/bootdotdev/learn-web-security/internal/identifiers"
+	"uuid"
 )
 
 const (
@@ -64,14 +63,14 @@ func ExtractTaxDocumentArchive(encryptionKeyring Keyring, contents []byte, extra
 		uncompressedBytes += entry.UncompressedSize64
 	}
 
-	identifier, err := identifiers.NewUUID()
-	if err != nil {
-		return ExtractedTaxDocumentArchive{}, err
-	}
-	importDirectory := filepath.Join(extractionDirectory, identifier)
+	identifier := uuid.NewV4()
+	importDirectory := filepath.Join(extractionDirectory, identifier.String())
 	plannedEntries := make([]plannedArchiveEntry, 0, len(archiveReader.File))
 	for _, entry := range archiveReader.File {
 		entryDestination := filepath.Join(importDirectory, entry.Name)
+		if filepath.IsAbs(entry.Name) || strings.Contains(entry.Name, "\\") || !isInsideDirectory(importDirectory, entryDestination) || entry.FileInfo().Mode()&os.ModeSymlink != 0 {
+			return ExtractedTaxDocumentArchive{}, &ArchiveImportError{Message: "Archive contains an unsafe entry path.", StatusCode: 400}
+		}
 		if isIgnoredArchiveEntry(entry.Name) {
 			continue
 		}
@@ -163,7 +162,7 @@ func isIgnoredArchiveEntry(entryName string) bool {
 
 func DiscardExtractedTaxDocumentArchive(archive ExtractedTaxDocumentArchive) error {
 	relativePath, err := filepath.Rel(archive.extractionDirectory, archive.ImportDirectory)
-	if err != nil || relativePath == "" || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) || strings.Contains(relativePath, string(filepath.Separator)) || filepath.IsAbs(relativePath) {
+	if err != nil || relativePath == "." || relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) || strings.Contains(relativePath, string(filepath.Separator)) || filepath.IsAbs(relativePath) {
 		return fmt.Errorf("refuse to remove path outside the import directory: %s", archive.ImportDirectory)
 	}
 	if err := os.RemoveAll(archive.ImportDirectory); err != nil {
@@ -190,4 +189,9 @@ func discardArchiveAfterWriteFailure(archive ExtractedTaxDocumentArchive, err er
 		return ExtractedTaxDocumentArchive{}, errors.Join(err, discardErr)
 	}
 	return ExtractedTaxDocumentArchive{}, err
+}
+
+func isInsideDirectory(directory, candidatePath string) bool {
+	relativePath, err := filepath.Rel(directory, candidatePath)
+	return err == nil && relativePath != "." && relativePath != ".." && !strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) && !filepath.IsAbs(relativePath)
 }
