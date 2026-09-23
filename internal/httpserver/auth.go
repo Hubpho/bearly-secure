@@ -12,6 +12,7 @@ import (
 	"github.com/bootdotdev/learn-web-security/internal/auth/passwords"
 	"github.com/bootdotdev/learn-web-security/internal/auth/returnto"
 	"github.com/bootdotdev/learn-web-security/internal/auth/sessions"
+	"github.com/bootdotdev/learn-web-security/internal/botdetection"
 	"github.com/bootdotdev/learn-web-security/internal/httpx"
 	"github.com/bootdotdev/learn-web-security/internal/logging"
 	"github.com/bootdotdev/learn-web-security/internal/templates"
@@ -168,7 +169,9 @@ func (handler *authHandler) Signup(responseWriter http.ResponseWriter, request *
 		http.Redirect(responseWriter, request, "/account", http.StatusFound)
 		return
 	}
-
+	if ok := botdetection.ProtectSignup(responseWriter, request, handler.renderer); ok {
+		return
+	}
 	email, emailErr := httpx.FormValue(request, "email")
 	displayName, displayNameErr := httpx.FormValue(request, "displayName")
 	password, passwordErr := httpx.FormValue(request, "password")
